@@ -1,45 +1,74 @@
 #include <ESP8266WiFi.h>
+#include <WiFiClient.h>
+#include <ESP8266WebServer.h>
+#include <ESP8266mDNS.h>
 #include "DHT.h"
 
 #define PIN_TEMP 2
 #define DEBUG
+#define ENABLE_EEPROM
 
-String myhostname = "ESP_DHT22";
+#define TYPE_HTML 1
+#define TYPE_TEXT 2
+#define TYPE_JSON 3
+
+const char* myhostname = "esp-temp";
 const char* ssid = "Bowles10";
 const char* password = "RainBowles";
 
 DHT dht(PIN_TEMP, DHT22);
-WiFiServer server(80);
+ESP8266WebServer server(80);
 
-void beginResponse(WiFiClient client, String code = "200 OK", String type = "text/html")
+void serverResponse(String msg, int code = 200, String type = "text/html")
 {
-  Serialprint("Sending ");
-  Serialprint(code);
-  Serialprintln(" response");
-  client.print("HTTP/1.1 ");
-  client.print(code);
-  client.print("\r\nContent-Type: ");
-  client.print(type);
-  client.print("\r\n\r\n");
-  if(type=="text/html")
+  server.sendHeader("Connection", "close");
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.send(code, "text/html", msg);
+}
+
+void sendHeader()
+{
+  server.sendContent("<html><head><title>");
+  server.sendContent(myhostname);
+  server.sendContent("</title></head><body>");
+}
+void sendFooter()
+{
+  server.sendContent("</body></html>");
+}
+
+void sendTempData(int type = TYPE_HTML)
+{
+  float h = dht.readHumidity();
+  float t = dht.readTemperature(true);
+
+  server.sendHeader("Connection", "close");
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  if(type==TYPE_JSON)
   {
-    client.print("<!DOCTYPE HTML>\r\n<html>\r\n<head><title>");
-    client.print(myhostname);
-    client.print("</title></head><body>");
+    server.send(200, "application/json");
+    server.sendContent("{\"temperature\":\"");
+    server.sendContent(String(t));
+    server.sendContent(",\"humidity\":");
+    server.sendContent(String(h));
+    server.sendContent("}");
+  } else if(type==TYPE_TEXT)
+  {
+    server.send(200, "text/plain");
+    server.sendContent(String(t));
+    server.sendContent(" ");
+    server.sendContent(String(h));
+  } else {
+    server.send(200, "text/html");
+    sendHeader();
+    server.sendContent("<dl><dt>Temperature</dt><dd>");
+    server.sendContent(String(t));
+    server.sendContent("</dd><dt>Humidity</dt><dd>");
+    server.sendContent(String(h));
+    server.sendContent("</dd></dl>");
+    sendFooter();
   }
 }
-void sendClientMessage(WiFiClient client, String msg, int code = 200)
-{
-  String codeS = (String)code;
-  if(code==200) codeS += " OK";
-  else if(code==400) codeS += " Not Found";
-  else if(code==500) codeS += " Server Error";
-  else codeS += " Unknown";
-  beginResponse(client, codeS);
-  client.print(msg);
-  client.print("\r\n</body></html>");
-}
-
 void setup() {
   #ifdef DEBUG
   Serial.begin(115200);
@@ -54,17 +83,31 @@ void setup() {
   Serialprint("::");
   Serialprint(password);
   Serialprintln("]");
+  WiFi.mode(WIFI_AP_STA);
   WiFi.begin(ssid, password);
 
-  while(WiFi.status() != WL_CONNECTED) {
-    delay(500);
+  if(WiFi.waitForConnectResult() != WL_CONNECTED)
+  {
+    Serial.println("WiFi failed");
+    return;
   }
+
+  MDNS.begin(myhostname);
+  server.on("/", HTTP_GET, [](){
+    if(server.hasArg("type")&&server.arg("type")=="json")
+      sendTempData(TYPE_JSON);
+    else if(server.hasArg("type")&&server.arg("type")=="text")
+      sendTempData(TYPE_TEXT);
+    else
+      sendTempData(TYPE_HTML);
+  });
 
   Serialprint("Connected! Starting server on ");
   Serialprint(WiFi.localIP().toString());
   Serialprintln("!");
 
   server.begin();
+  MDNS.addService("http", "tcp", 80);
 
   Serialprint("Started server! Starting DHT22...");
 
@@ -74,32 +117,8 @@ void setup() {
 }
 
 void loop() {
-  WiFiClient client = server.available();
-  if(!client) return;
-  while(!client.available()) {
-    delay(1);
-  }
-
-  float h = dht.readHumidity();
-  float t = dht.readTemperature(true);
-
-  if(isnan(h)&&isnan(t))
-  {
-    sendClientMessage(client, "Invalid reading", 500);
-    return;
-  } else if(isnan(h)) {
-    sendClientMessage(client, "Invalid humidity (temp = " + (String)t + ")", 500);
-    return;
-  } else if(isnan(t)) {
-    sendClientMessage(client, "Invalid temperature (humidity = " + (String)h + ")", 500);
-    return;
-  }
-
-   beginResponse(client, "200 OK", "text/plain");
-
-   client.print(t);
-   client.print(" ");
-   client.print(h);
+  server.handleClient();
+  delay(1);
 }
 
 int Serialprint(String s)
