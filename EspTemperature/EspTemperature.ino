@@ -2,6 +2,7 @@
 #include "DHT.h"
 
 #define PIN_TEMP 2
+#define DEBUG
 
 String myhostname = "ESP_DHT22";
 const char* ssid = "Bowles10";
@@ -12,9 +13,9 @@ WiFiServer server(80);
 
 void beginResponse(WiFiClient client, String code = "200 OK", String type = "text/html")
 {
-  Serial.print("Sending ");
-  Serial.print(code);
-  Serial.println(" response");
+  Serialprint("Sending ");
+  Serialprint(code);
+  Serialprintln(" response");
   client.print("HTTP/1.1 ");
   client.print(code);
   client.print("\r\nContent-Type: ");
@@ -40,35 +41,36 @@ void sendClientMessage(WiFiClient client, String msg, int code = 200)
 }
 
 void setup() {
+  #ifdef DEBUG
   Serial.begin(115200);
-  Serial.println();
-  Serial.println();
-  Serial.println("EspTemperature Startup");
+  while(!Serial);
+  #endif
+  Serialprintln("EspTemperature Startup");
 
-  Serial.print("Connecting [");
-  Serial.print(myhostname);
-  Serial.print("] to [");
-  Serial.print(ssid);
-  Serial.print("::");
-  Serial.print(password);
-  Serial.println("]");
+  Serialprint("Connecting [");
+  Serialprint(myhostname);
+  Serialprint("] to [");
+  Serialprint(ssid);
+  Serialprint("::");
+  Serialprint(password);
+  Serialprintln("]");
   WiFi.begin(ssid, password);
 
   while(WiFi.status() != WL_CONNECTED) {
     delay(500);
   }
 
-  Serial.print("Connected! Starting server on ");
-  Serial.print(WiFi.localIP().toString());
-  Serial.println("!");
+  Serialprint("Connected! Starting server on ");
+  Serialprint(WiFi.localIP().toString());
+  Serialprintln("!");
 
   server.begin();
 
-  Serial.print("Started server! Starting DHT22...");
+  Serialprint("Started server! Starting DHT22...");
 
   dht.begin();
 
-  Serial.println("Done!");
+  Serialprintln("Done!");
 }
 
 void loop() {
@@ -98,4 +100,37 @@ void loop() {
    client.print(t);
    client.print(" ");
    client.print(h);
+}
+
+int Serialprint(String s)
+{
+  #ifdef DEBUG
+  return Serial.print(s);
+  #else
+  return 0;
+  #endif
+}
+int Serialprint(int s)
+{
+  #ifdef DEBUG
+  return Serial.print(s);
+  #else
+  return 0;
+  #endif
+}
+int Serialprintln(String s)
+{
+  #ifdef DEBUG
+  return Serial.println(s);
+  #else
+  return 0;
+  #endif
+}
+int Serialprintln(int s)
+{
+  #ifdef DEBUG
+  return Serial.println(s);
+  #else
+  return 0;
+  #endif
 }
